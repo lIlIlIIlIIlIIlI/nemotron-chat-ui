@@ -1,0 +1,10 @@
+import { eq, and } from 'drizzle-orm';
+import { z } from 'zod';
+import { requireUser } from '@/lib/auth';
+import { ownedMessage } from '@/lib/data';
+import { api, json, body, AppError } from '@/lib/http';
+import { db } from '@/lib/db';
+import { artifacts } from '@/lib/db/schema';
+import { uuid } from '@/lib/validation';
+export const GET = api(async request => { const user = await requireUser(); const messageId = new URL(request.url).searchParams.get('messageId'); return json(await db().select().from(artifacts).where(and(eq(artifacts.userId, user.id), messageId ? eq(artifacts.messageId, messageId) : undefined)).limit(100)); });
+export const POST = api(async request => { const user = await requireUser(); const input = await body(request, z.object({ messageId: uuid, name: z.string().min(1).max(200), language: z.string().max(40), content: z.string().max(200000) })); const message = await ownedMessage(user.id, input.messageId); if (message.role !== 'assistant') throw new AppError('ARTIFACT_ROLE', 'AI 답변에서 Artifact를 생성해 주세요.'); const [row] = await db().insert(artifacts).values({ userId: user.id, messageId: input.messageId, name: input.name, language: input.language, versions: [input.content] }).returning(); return json(row, 201); });

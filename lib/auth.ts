@@ -1,75 +1,29 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
-
-const COOKIE_NAME = "nemotron_session";
-const SESSION_SECONDS = 60 * 60 * 24 * 7;
-
-function getSecret() {
-  const secret = process.env.AUTH_SECRET;
-  return secret && secret.length >= 32 ? secret : null;
+import { cookies } from 'next/headers';
+import { randomBytes } from 'node:crypto';
+import { and, eq, gt } from 'drizzle-orm';
+import { db } from './db';
+import { sessions, users } from './db/schema';
+import { digest } from './security/crypto';
+import { AppError } from './http';
+export const SESSION_COOKIE = process.env.NODE_ENV === 'production' ? '__Host-nemotron-session' : 'nemotron-session';
+const duration = 60 * 60 * 24 * 14;
+export async function getUser() {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  const [row] = await db().select({ id: users.id, email: users.email, name: users.name }).from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId)).where(and(eq(sessions.id, digest(token)), gt(sessions.expiresAt, new Date()))).limit(1);
+  return row || null;
 }
-
-function signature(payload: string, secret: string) {
-  return createHmac("sha256", secret).update(payload).digest("base64url");
+export async function requireUser() { const user = await getUser(); if (!user) throw new AppError('UNAUTHENTICATED', '로그인이 필요합니다.', 401); return user; }
+export async function hasValidSession() { return Boolean(await getUser()); }
+export async function createSession(userId: string) {
+  await destroySession();
+  const token = randomBytes(32).toString('base64url');
+  await db().insert(sessions).values({ id: digest(token), userId, expiresAt: new Date(Date.now() + duration * 1000) });
+  (await cookies()).set(SESSION_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: duration });
 }
-
-function constantTimeTextEqual(left: string, right: string) {
-  const leftHash = createHash("sha256").update(left).digest();
-  const rightHash = createHash("sha256").update(right).digest();
-  return timingSafeEqual(leftHash, rightHash);
+export async function destroySession() {
+  const jar = await cookies(); const token = jar.get(SESSION_COOKIE)?.value;
+  if (token) await db().delete(sessions).where(eq(sessions.id, digest(token)));
+  jar.set(SESSION_COOKIE, '', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 0 });
 }
-
-export function credentialsAreConfigured() {
-  return Boolean(
-    process.env.APP_LOGIN_USERNAME &&
-      process.env.APP_LOGIN_PASSWORD &&
-      getSecret(),
-  );
-}
-
-export function verifyCredentials(username: string, password: string) {
-  const expectedUsername = process.env.APP_LOGIN_USERNAME;
-  const expectedPassword = process.env.APP_LOGIN_PASSWORD;
-  if (!expectedUsername || !expectedPassword || !getSecret()) return false;
-  return (
-    constantTimeTextEqual(username, expectedUsername) &&
-    constantTimeTextEqual(password, expectedPassword)
-  );
-}
-
-export function createSessionToken() {
-  const secret = getSecret();
-  if (!secret) throw new Error("AUTH_SECRET must contain at least 32 characters.");
-  const payload = Buffer.from(
-    JSON.stringify({ exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS }),
-  ).toString("base64url");
-  return `${payload}.${signature(payload, secret)}`;
-}
-
-export function isValidSessionToken(token?: string) {
-  const secret = getSecret();
-  if (!secret || !token) return false;
-
-  const [payload, suppliedSignature, extra] = token.split(".");
-  if (!payload || !suppliedSignature || extra) return false;
-  if (!constantTimeTextEqual(suppliedSignature, signature(payload, secret))) return false;
-
-  try {
-    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
-      exp?: number;
-    };
-    return typeof parsed.exp === "number" && parsed.exp > Math.floor(Date.now() / 1000);
-  } catch {
-    return false;
-  }
-}
-
-export async function hasValidSession() {
-  const cookieStore = await cookies();
-  return isValidSessionToken(cookieStore.get(COOKIE_NAME)?.value);
-}
-
-export const sessionCookie = {
-  name: COOKIE_NAME,
-  maxAge: SESSION_SECONDS,
-};

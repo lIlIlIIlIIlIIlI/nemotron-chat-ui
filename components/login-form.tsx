@@ -1,72 +1,13 @@
-"use client";
-
-import { FormEvent, useState } from "react";
-
-export default function LoginForm() {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setSubmitting(true);
-    try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      const result = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(result.error || "로그인에 실패했습니다.");
-      window.location.assign("/");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "로그인에 실패했습니다.");
-      setSubmitting(false);
-    }
+'use client';
+import { useState, type FormEvent } from 'react';
+import { ArrowRight, Asterisk, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
+import { apiFetch } from '@/lib/client';
+export function LoginForm() {
+  const [register, setRegister] = useState(false); const [show, setShow] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError(''); const form = new FormData(event.currentTarget);
+    try { await apiFetch(`/api/auth/${register ? 'register' : 'login'}`, { method: 'POST', body: JSON.stringify({ email: String(form.get('email')).trim(), password: form.get('password'), name: form.get('name') }) }); window.location.assign('/'); }
+    catch (err) { setError((err as Error).message); } finally { setBusy(false); }
   }
-
-  return (
-    <main className="login-page">
-      <a className="login-brand" href="/" aria-label="Nemotron Chat 홈">
-        <span className="brand-mark">N</span>
-        <span>Nemotron Chat</span>
-      </a>
-      <section className="login-card">
-        <div className="login-card-mark"><span className="brand-mark">N</span></div>
-        <h1>다시 오셨네요</h1>
-        <p className="login-subtitle">계정으로 로그인해 대화를 이어가세요.</p>
-        <form onSubmit={handleSubmit} className="login-form">
-          <label htmlFor="username">아이디</label>
-          <input
-            id="username"
-            name="username"
-            autoComplete="username"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            placeholder="아이디를 입력하세요"
-            required
-          />
-          <label htmlFor="password">비밀번호</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="비밀번호를 입력하세요"
-            required
-          />
-          {error && <p className="login-error" role="alert">{error}</p>}
-          <button className="login-submit" type="submit" disabled={submitting}>
-            {submitting ? "로그인 중…" : "로그인"}
-          </button>
-        </form>
-        <p className="login-footnote">관리자가 설정한 계정으로 로그인할 수 있습니다.</p>
-      </section>
-      <p className="login-footer">NVIDIA Nemotron 기반 채팅</p>
-    </main>
-  );
+  return <main className="auth-page"><section className="auth-story"><a className="brand" href="/login"><span className="brand-mark"><Asterisk size={28} /></span>nemo<span className="brand-label">workspace</span></a><div><span className="eyebrow">YOUR MODELS. YOUR WORKSPACE.</span><h1>생각에서 코드까지,<br />하나의 대화로.</h1><p>원하는 AI를 연결하고, 더 나은 답을 비교하고,<br />아이디어를 함께 만들어 보세요.</p><div className="auth-orbit" aria-hidden="true"><Asterisk size={164} strokeWidth={1} /></div></div><small><ShieldCheck size={15} /> API Key는 서버에서 암호화하여 보관합니다.</small></section><section className="auth-form-section"><div className="auth-form-wrap"><span className="eyebrow">NEMOTRON WORKSPACE</span><h2>{register ? '나만의 워크스페이스 만들기' : '다시 만나서 반가워요'}</h2><p className="muted">{register ? '계정을 만들고 원하는 모델을 연결하세요.' : '계정에 로그인하여 대화를 이어가세요.'}</p><form onSubmit={submit} className="form-stack">{register && <label>이름<input name="name" autoComplete="name" required maxLength={60} placeholder="어떻게 불러드릴까요?" /></label>}<label>이메일<input name="email" type="email" autoComplete="email" required placeholder="you@example.com" /></label><label>비밀번호<div className="password-field"><input name="password" type={show ? 'text' : 'password'} autoComplete={register ? 'new-password' : 'current-password'} required minLength={register ? 12 : 1} maxLength={64} placeholder={register ? '12자 이상 입력하세요' : '비밀번호를 입력하세요'} /><button type="button" aria-label={show ? '비밀번호 숨기기' : '비밀번호 보기'} onClick={() => setShow(!show)}>{show ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>{error && <p className="error-text" role="alert">{error}</p>}<button className="button primary auth-submit" disabled={busy}>{busy ? <Loader2 size={18} className="spin" /> : <>{register ? '계정 만들기' : '로그인'}<ArrowRight size={18} /></>}</button></form><p className="auth-switch">{register ? '이미 계정이 있으신가요?' : '처음 방문하셨나요?'} <button onClick={() => { setRegister(!register); setError(''); }}>{register ? '로그인' : '회원가입'}</button></p><p className="fine-print">이메일·비밀번호 계정으로 시작합니다.<br />소셜 로그인과 이메일 비밀번호 복구는 아직 지원하지 않습니다.</p></div></section></main>;
 }
