@@ -1,0 +1,11 @@
+'use client';
+import { useEffect, useState } from 'react';
+import { Archive, MessageSquare, Search } from 'lucide-react';
+import { apiFetch } from '@/lib/client';
+import type { Conversation } from '@/lib/types';
+import { Dialog } from '../ui/dialog';
+export function SearchDialog({ onClose, onSelect }: { onClose(): void; onSelect(id: string): void }) {
+  const [query, setQuery] = useState(''); const [results, setResults] = useState<Conversation[] | null>(null); const [error, setError] = useState(''); const [more, setMore] = useState(false);
+  useEffect(() => { const controller = new AbortController(); const timer = setTimeout(() => { apiFetch<{ items: Conversation[]; hasMore: boolean }>(`/api/conversations?archived=all&q=${encodeURIComponent(query)}`, { signal: controller.signal }).then(value => { setResults(value.items); setMore(value.hasMore); setError(''); }).catch(err => { if (!controller.signal.aborted) setError(err.message); }); }, 200); return () => { clearTimeout(timer); controller.abort(); }; }, [query]);
+  return <Dialog open onClose={onClose} title="대화 검색" className="search-dialog"><div className="dialog-body"><div className="search-input"><Search size={19} /><input autoFocus value={query} onChange={e => { setQuery(e.target.value); setResults(null); }} placeholder="제목, 메시지, 프로젝트 검색…" aria-label="대화 검색어" /></div><p className="fine-print">보관된 대화도 검색합니다.</p>{error && <p className="error-text">{error}</p>}{results === null ? <div className="skeleton" /> : !results.length ? <div className="empty-state">검색 결과가 없습니다.</div> : results.map(item => <button className="search-result" key={item.id} onClick={() => { onSelect(item.id); onClose(); }}>{item.isArchived ? <Archive size={17} /> : <MessageSquare size={17} />}<span><strong>{item.title}</strong><small>{new Date(item.updatedAt).toLocaleDateString()} {item.isArchived ? '· 보관됨' : ''}</small></span></button>)}{more && <button className="button" onClick={async () => { try { const result = await apiFetch<{ items: Conversation[]; hasMore: boolean }>(`/api/conversations?archived=all&q=${encodeURIComponent(query)}&offset=${results?.length || 0}`); setResults(old => [...old || [],...result.items]); setMore(result.hasMore); } catch (err) { setError((err as Error).message); } }}>더 보기</button>}</div></Dialog>;
+}
