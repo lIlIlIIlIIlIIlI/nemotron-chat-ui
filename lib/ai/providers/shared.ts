@@ -1,7 +1,7 @@
 import { providerFetch, providerUrl } from '../../security/provider-network';
 import { providerError } from '../errors';
 import type { AIProvider, AIRequest } from '../types';
-export function headers(provider: AIProvider) {
+export function headers(provider: AIProvider): Record<string, string> {
   if (provider.type === 'anthropic') return { 'Content-Type': 'application/json', 'x-api-key': provider.apiKey, 'anthropic-version': '2023-06-01' };
   if (provider.type === 'gemini') return { 'Content-Type': 'application/json', 'x-goog-api-key': provider.apiKey };
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey}` };
@@ -25,3 +25,4 @@ export function option(request: AIRequest, name: keyof AIRequest['options']) {
   return request.model.supportedOptions.includes(name) ? request.options[name] : undefined;
 }
 export function maxTokens(request: AIRequest) { return Math.min(request.options.maxTokens || request.model.maxOutputTokens, request.model.maxOutputTokens); }
+

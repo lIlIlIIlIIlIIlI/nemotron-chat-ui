@@ -33,7 +33,7 @@ export async function providerFetch(url: URL, init: { method?: string; headers?:
   return new Promise<Response>((resolve, reject) => {
     const transport = test ? http : https;
     const req = transport.request(url, {
-      method: init.method || 'GET', headers: init.headers,
+      method: init.method || 'GET', headers: init.headers, family: addresses[0].family,
       lookup: (_hostname, _options, callback) => callback(null, addresses[0].address, addresses[0].family),
       signal: init.signal, timeout: init.timeoutMs || 90000,
     }, res => {
@@ -48,3 +48,4 @@ export async function providerFetch(url: URL, init: { method?: string; headers?:
     if (init.body) req.write(init.body); req.end();
   });
 }
+
