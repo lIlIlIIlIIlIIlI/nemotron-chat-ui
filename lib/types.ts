@@ -35,12 +35,12 @@ export type Memory = { id: string; content: string; enabled: boolean };
 export type Settings = {
   language: 'ko' | 'en'; theme: 'system' | 'light' | 'dark'; fontSize: number;
   compact: boolean; codeTheme: 'dark' | 'light'; enterToSend: boolean;
-  defaultModelId: string | null; defaultProjectId: string | null;
+  defaultModelId: string | null; defaultProjectId: string | null; imageAutoEnabled: boolean; defaultImageProviderId: string | null;
   aboutYou: string; responseStyle: string; memoryEnabled: boolean; options: GenerationOptions;
 };
 export const defaultSettings: Settings = {
   language: 'ko', theme: 'system', fontSize: 15, compact: false, codeTheme: 'dark', enterToSend: true,
-  defaultModelId: null, defaultProjectId: null, aboutYou: '', responseStyle: '', memoryEnabled: true,
+  defaultModelId: null, defaultProjectId: null, imageAutoEnabled: false, defaultImageProviderId: null, aboutYou: '', responseStyle: '', memoryEnabled: true,
   options: { temperature: 1, topP: 0.95, maxTokens: 4096, reasoningEffort: 'off' },
 };
 export type ChatEvent =
@@ -52,3 +52,8 @@ export type ChatEvent =
   | { type: 'done'; message: Message };
 export type Artifact = { id: string; messageId: string; name: string; language: string; versions: string[]; updatedAt: string };
 export type Bootstrap = { user: { id: string; name: string; email: string }; providers: Provider[]; models: AIModel[]; projects: Project[]; settings: Settings; memories: Memory[] };
+
+export type ImageProvider = {
+  id: string; name: string; type: 'openai' | 'openai-compatible' | 'gemini';
+  baseUrl: string; modelId: string; isEnabled: boolean; keyHint: string;
+};

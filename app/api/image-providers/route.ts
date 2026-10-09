@@ -1,0 +1,21 @@
+import { eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { imageProviders } from '@/lib/db/schema';
+import { requireUser } from '@/lib/auth';
+import { api, body, json } from '@/lib/http';
+import { imageProviderInput } from '@/lib/validation';
+import { encryptSecret } from '@/lib/security/crypto';
+import { validateImageApi } from '@/lib/ai/image-service';
+import { listImageProviders } from '@/lib/ai/image-providers';
+import { rateLimit } from '@/lib/security/rate-limit';
+export const GET = api(async () => json(await listImageProviders((await requireUser()).id)));
+export const POST = api(async request => {
+  const user = await requireUser(); await rateLimit('image-provider-write', user.id, 12);
+  const input = await body(request, imageProviderInput);
+  validateImageApi(input.type, input.baseUrl, input.modelId);
+  const rows = await listImageProviders(user.id);
+  if (rows.length >= 10) return json({ error: '이미지 API는 최대 10개까지 등록할 수 있습니다.' }, 400);
+  const id = crypto.randomUUID();
+  await db().insert(imageProviders).values({ ...input, id, userId: user.id, encryptedApiKey: encryptSecret(input.apiKey, `${user.id}:image:${id}`), keyLastFour: input.apiKey.slice(-4) });
+  return json((await listImageProviders(user.id)).find(x => x.id === id), 201);
+});

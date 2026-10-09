@@ -87,3 +87,11 @@ export const attachmentChunks = sqliteTable('attachment_chunks', {
   attachmentId: text('attachment_id').notNull().references(() => attachments.id, { onDelete: 'cascade' }),
   part: integer('part').notNull(), data: text('data').notNull(),
 }, t => [primaryKey({ columns: [t.attachmentId, t.part] })]);
+
+export const imageProviders = sqliteTable('image_providers', {
+  id: id(), userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(), type: text('type').$type<'openai' | 'openai-compatible' | 'gemini'>().notNull(),
+  baseUrl: text('base_url').notNull(), modelId: text('model_id').notNull(),
+  encryptedApiKey: text('encrypted_api_key').notNull(), keyLastFour: text('key_last_four').notNull(),
+  isEnabled: boolean('is_enabled').notNull().default(true), createdAt: created(),
+}, t => [index('image_providers_user_idx').on(t.userId)]);

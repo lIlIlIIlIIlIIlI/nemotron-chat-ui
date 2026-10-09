@@ -6,7 +6,7 @@ import { useWorkspace } from '@/hooks/use-workspace';
 import { useMobile } from '@/hooks/use-mobile';
 import { apiFetch, download } from '@/lib/client';
 import { activeBranch } from '@/lib/branches';
-import type { Artifact, Message } from '@/lib/types';
+import type { Artifact, Message, ImageProvider } from '@/lib/types';
 import { FeedbackProvider, useFeedback } from './ui/feedback';
 import { Sidebar } from './chat/sidebar';
 import { Composer } from './chat/composer';
@@ -24,8 +24,13 @@ function WorkspaceApp() {
   const base = useWorkspace(); const { toast } = useFeedback(); const mobile = useMobile();
   const [collapsed, setCollapsed] = useState(false); const [drawer, setDrawer] = useState(false); const sidebar = mobile ? drawer : !collapsed;
   const [width, setWidth] = useState(264); const [settings, setSettings] = useState<string | null>(null); const [search, setSearch] = useState(false); const [project, setProject] = useState<{ id: string | null } | null>(null); const [share, setShare] = useState(false); const [compare, setCompare] = useState(false); const [advanced, setAdvanced] = useState(false); const [artifact, setArtifact] = useState<Artifact | null>(null);
+  const [imageProviders, setImageProviders] = useState<ImageProvider[]>([]); const [imageProviderChoice, setImageProviderChoice] = useState('');
   const [draft, setDraft] = useState(''); const [editing, setEditing] = useState<Message | null>(null);
   const w = { ...base, newChat: (id: string | null = null) => { setEditing(null); setDraft(''); setArtifact(null); base.newChat(id); }, openConversation: async (id: string) => { setEditing(null); setDraft(''); setArtifact(null); await base.openConversation(id); } };
+  useEffect(() => {
+    if (!base.data) return;
+    void apiFetch<ImageProvider[]>('/api/image-providers').then(setImageProviders).catch(error => toast((error as Error).message,true));
+  }, [base.data]);
   function closeSidebar() { if (mobile) setDrawer(false); else setCollapsed(true); }
   useEffect(() => {
     const p = base.data?.settings; if (!p) return;
@@ -57,7 +62,7 @@ function WorkspaceApp() {
   }
   const quick = [{ icon: Code2, label: '코드 작성', prompt: '다음 기능을 구현하는 코드를 작성해 주세요: ', code: true }, { icon: Terminal, label: '코드 분석', prompt: '다음 코드의 구조와 개선할 점을 분석해 주세요:\n\n', code: true }, { icon: Bug, label: '버그 수정', prompt: '다음 오류의 원인을 찾고 수정해 주세요:\n\n', code: true }, { icon: FileText, label: '문서 작성', prompt: '다음 내용을 명확한 문서로 정리해 주세요: ' }, { icon: Lightbulb, label: '아이디어', prompt: '다음 주제에 대해 아이디어를 함께 발전시켜 주세요: ' }, { icon: FileSearch, label: '파일 분석', prompt: '첨부한 파일의 핵심 내용과 개선할 점을 분석해 주세요. ' }];
   const english = w.data?.settings.language === 'en';
-  const composer = <Composer key={w.conversation?.id || `new-${w.projectId}`} workspace={w} value={draft} setValue={setDraft} editing={editing} clearEdit={() => setEditing(null)} onSettings={() => setSettings('providers')} onAdvanced={() => setAdvanced(true)} onSearch={() => setSearch(true)} />;
+  const composer = <Composer imageProviders={imageProviders} imageProviderChoice={imageProviderChoice} onImageProviderChoice={setImageProviderChoice} onImageSettings={() => setSettings('images')} key={w.conversation?.id || `new-${w.projectId}`} workspace={w} value={draft} setValue={setDraft} editing={editing} clearEdit={() => setEditing(null)} onSettings={() => setSettings('providers')} onAdvanced={() => setAdvanced(true)} onSearch={() => setSearch(true)} />;
   if (w.error) return <main className="full-empty"><Asterisk size={38} /><h1>워크스페이스를 열지 못했습니다</h1><p className="error-text">{w.error}</p><button className="button" onClick={() => window.location.reload()}>다시 시도</button></main>;
   if (!w.data) return <main className="app-loading" aria-busy="true"><div className="sidebar-skeleton" /><div className="loading-center"><Asterisk size={42} className="spin-slow" /><p>워크스페이스를 불러오는 중…</p></div></main>;
   return <div className={`workspace ${sidebar ? 'sidebar-open' : 'sidebar-closed'} ${artifact ? 'has-artifact' : ''}`} style={{ '--sidebar-width': `${width}px` } as CSSProperties}>

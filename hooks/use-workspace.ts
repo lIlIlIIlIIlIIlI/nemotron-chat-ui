@@ -52,7 +52,7 @@ export function useWorkspace() {
     const updated = await apiFetch<Conversation>(`/api/conversations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
     if (active.current === id) setConversation(updated); await refreshList(); return updated;
   }, [refreshList]);
-  async function send(input: { content?: string; files?: Attachment[]; regenerateId?: string; parentMessageId?: string | null; selectedModelId?: string }) {
+  async function send(input: { content?: string; files?: Attachment[]; regenerateId?: string; parentMessageId?: string | null; selectedModelId?: string; forceImage?: boolean; imageProviderId?: string }) {
     if (abort.current || loadingChat) return false;
     const selected = input.selectedModelId || modelId;
     if (!selected) { toast('설정에서 Provider와 모델을 먼저 추가해 주세요.', true); return false; }
@@ -60,7 +60,7 @@ export function useWorkspace() {
     let assistantId = ''; let fullText = ''; let frame = 0; let accepted = false; let finalized = false;
     const flush = () => { if (assistantId && sequence === nav.current) setMessages(old => old.map(x => x.id === assistantId ? { ...x, content: fullText } : x)); frame = 0; };
     try {
-      const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: active.current || undefined, projectId, modelId: selected, content: input.content, attachmentIds: input.files?.map(x => x.id) || [], regenerateId: input.regenerateId, parentMessageId: input.parentMessageId, mode, options, systemPrompt }), signal: controller.signal });
+      const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: active.current || undefined, projectId, modelId: selected, content: input.content, attachmentIds: input.files?.map(x => x.id) || [], regenerateId: input.regenerateId, parentMessageId: input.parentMessageId, forceImage: input.forceImage, imageProviderId: input.imageProviderId, mode, options, systemPrompt }), signal: controller.signal });
       if (!response.ok) throw new Error((await response.json()).error || '채팅 요청에 실패했습니다.');
       if (!response.body) throw new Error('스트리밍 연결을 열지 못했습니다.');
       for await (const item of parseSSE(response.body)) {
