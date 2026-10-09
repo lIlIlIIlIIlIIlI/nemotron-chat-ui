@@ -24,14 +24,18 @@ export function ImageProvidersPanel({ workspace: w }: { workspace: Workspace }) 
   const [auto,setAuto] = useState(Boolean(w.data?.settings.imageAutoEnabled));
   const [preferred,setPreferred] = useState(w.data?.settings.defaultImageProviderId || '');
   async function load() { const list = await apiFetch<ImageProvider[]>('/api/image-providers'); setItems(list); setReady(true); }
-  useEffect(() => { void load().catch(error => toast((error as Error).message,true)); }, []);
+  useEffect(() => {
+    void apiFetch<ImageProvider[]>('/api/image-providers')
+      .then(list => { setItems(list); setReady(true); })
+      .catch(error => toast((error as Error).message,true));
+  }, [toast]);
   async function save(event: FormEvent) {
     event.preventDefault(); if(!form) return;
     setBusy(true);
     try {
       await apiFetch(editing ? `/api/image-providers/${editing}` : '/api/image-providers',
         {method:editing?'PATCH':'POST',body:JSON.stringify({...form,apiKey: form.apiKey || undefined})});
-      await load(); setForm(null); setEditing(null); toast('이미지 API가 암호화되어 저장되었습니다.');
+      await load(); await w.loadData(); setForm(null); setEditing(null); toast('이미지 API가 암호화되어 저장되었습니다.');
     } catch(error) { toast((error as Error).message,true); }
     finally { setBusy(false); }
   }
@@ -62,7 +66,7 @@ export function ImageProvidersPanel({ workspace: w }: { workspace: Workspace }) 
       <button className="icon-button" aria-label={`${item.name} 수정`} onClick={() => {setEditing(item.id);setForm({name:item.name,type:item.type,baseUrl:item.baseUrl,modelId:item.modelId,isEnabled:item.isEnabled,apiKey:''});}}><Pencil size={16}/></button>
       <button className="icon-button" aria-label={`${item.name} 삭제`} disabled={busy} onClick={async()=>{
         if(await confirm(`${item.name} 이미지 API와 저장된 키를 삭제할까요? 기존 생성 이미지는 유지됩니다.`)) {
-          try {await apiFetch(`/api/image-providers/${item.id}`,{method:'DELETE'}); if(preferred===item.id){setPreferred('');setAuto(false);}await load();}
+          try {await apiFetch(`/api/image-providers/${item.id}`,{method:'DELETE'}); if(preferred===item.id){setPreferred('');setAuto(false);}await load();await w.loadData();}
           catch(error){toast((error as Error).message,true);}
         }
       }}><Trash2 size={16}/></button>
@@ -84,7 +88,7 @@ export function ImageProvidersPanel({ workspace: w }: { workspace: Workspace }) 
     <div className="sub-panel form-stack">
       <h3>채팅 이미지 생성</h3>
       <label>기본 이미지 생성 API<select value={preferred} onChange={e=>setPreferred(e.target.value)}><option value="">선택 안 함</option>{items.filter(x=>x.isEnabled).map(x=><option key={x.id} value={x.id}>{x.name} · {x.modelId}</option>)}</select></label>
-      <label className="check-row"><input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)}/>채팅에서 '그려줘' 등의 요청을 자동으로 이미지 생성</label>
+      <label className="check-row"><input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)}/>채팅에서 &apos;그려줘&apos; 등의 요청을 자동으로 이미지 생성</label>
       <p className="fine-print">기본값은 자동 생성 꺼짐입니다. 자동 생성 사용 시 API 요금이 발생할 수 있습니다. 채팅창에서 이미지 API를 직접 선택하면 자동 감지 설정과 관계없이 생성합니다.</p>
       <button className="button primary" disabled={busy} onClick={() => void savePreferences()}>이미지 생성 설정 저장</button>
     </div>
