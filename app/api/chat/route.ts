@@ -11,6 +11,7 @@ import { db } from '@/lib/db';
 import { messages, attachments, attachmentChunks } from '@/lib/db/schema';
 import { fileChunks } from '@/lib/db/files';
 import { wantsImage } from '@/lib/ai/image-intent';
+import { decodeGeneratedImage } from '@/lib/ai/generated-image';
 import { serialized } from '@/lib/data';
 import type { ChatEvent, Message } from '@/lib/types';
 export const runtime = 'nodejs';
@@ -26,7 +27,7 @@ export const POST = api(async request => {
   const stream = new ReadableStream<Uint8Array>({
     async start(output) {
       const send = (event: ChatEvent) => { if (connected) { try { output.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)); } catch { connected = false; controller.abort(); } } };
-      let content = ''; let status: Message['status'] = 'complete'; let metadata = prepared.assistant.metadata;
+      let content = ''; let status: Message['status'] = 'complete'; let metadata: Message['metadata'] = { ...prepared.assistant.metadata, ...(imageMode ? { imageModel: 'FLUX.2 [klein] 9B' } : {}) };
       const start = Date.now(); let checkpoint = start;
       const heartbeat = setInterval(() => { if (connected) { try { output.enqueue(encoder.encode(': heartbeat\n\n')); } catch { connected = false; controller.abort(); } } }, 15000);
       send({ type: 'start', conversation: prepared.conversation, userMessage: prepared.userMessage, assistantMessage: prepared.assistant });
@@ -44,13 +45,14 @@ export const POST = api(async request => {
           const response = await fetch(new URL('/api/generate', base), { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: input.content, width: 1024, height: 1024, response_format: 'json' }), signal, cache: 'no-store' });
           if (!response.ok) throw new AppError('IMAGE_FAILED', '이미지를 생성하지 못했습니다. Worker 로그를 확인해 주세요.', 502);
           const imageResult: unknown = await response.json();
-          if (!imageResult || typeof imageResult !== 'object' || !('image' in imageResult) || typeof imageResult.image !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(imageResult.image)) throw new AppError('IMAGE_INVALID', 'Worker 이미지 응답이 올바르지 않습니다.', 502);
-          const bytes = Buffer.from(imageResult.image, 'base64');
-          if (!bytes.length || bytes.length > 8 * 1024 * 1024 || !bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw new AppError('IMAGE_INVALID', 'PNG 이미지 크기 또는 형식이 올바르지 않습니다.', 502);
+          let generated: ReturnType<typeof decodeGeneratedImage>;
+          try { generated = decodeGeneratedImage(imageResult); }
+          catch (error) { throw new AppError('IMAGE_INVALID', error instanceof Error ? error.message : '이미지 응답 형식이 올바르지 않습니다.', 502); }
+          const { bytes, mimeType, extension } = generated;
           signal.throwIfAborted();
           const fileId = crypto.randomUUID();
           await db().batch([
-            db().insert(attachments).values({ id: fileId, userId: user.id, name: `flux-${fileId}.png`, mimeType: 'image/png', size: bytes.length, conversationId: prepared.conversation.id, messageId: prepared.assistant.id }),
+            db().insert(attachments).values({ id: fileId, userId: user.id, name: `flux-${fileId}.${extension}`, mimeType, size: bytes.length, conversationId: prepared.conversation.id, messageId: prepared.assistant.id }),
             ...fileChunks(fileId, bytes).map(chunk => db().insert(attachmentChunks).values(chunk)),
           ] as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]);
           metadata = { ...metadata, generatedImageId: fileId };

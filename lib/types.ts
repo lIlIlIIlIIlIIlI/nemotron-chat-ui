@@ -27,7 +27,7 @@ export type Message = {
   role: 'system' | 'user' | 'assistant' | 'tool'; content: string;
   modelId: string | null; providerId: string | null;
   status: 'complete' | 'streaming' | 'stopped' | 'error'; createdAt: string;
-  metadata: Usage & { error?: string; feedback?: 'up' | 'down' | null; contextTrimmed?: boolean; mode?: 'chat' | 'code'; attachmentIds?: string[]; generatedImageId?: string };
+  metadata: Usage & { error?: string; feedback?: 'up' | 'down' | null; contextTrimmed?: boolean; mode?: 'chat' | 'code'; attachmentIds?: string[]; generatedImageId?: string; imageModel?: string };
 };
 export type Project = { id: string; name: string; description: string; instructions: string; createdAt: string };
 export type Attachment = { id: string; name: string; mimeType: string; size: number; projectId: string | null; messageId: string | null; conversationId: string | null };

@@ -2,6 +2,7 @@ import { requireUser } from '@/lib/auth';
 import { api, AppError, json, readLimited } from '@/lib/http';
 import { rateLimit } from '@/lib/security/rate-limit';
 import { z } from 'zod';
+import { decodeGeneratedImage } from '@/lib/ai/generated-image';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -46,8 +47,8 @@ export const POST = api(async request => {
   if (!response.ok) {
     throw new AppError('IMAGE_FAILED', response.status === 429 ? '이미지 생성 요청이 많습니다. 잠시 후 다시 시도해 주세요.' : '이미지 생성에 실패했습니다. Worker 설정 및 로그를 확인해 주세요.', 502);
   }
-  if (!result || typeof result !== 'object' || !('image' in result) || typeof result.image !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(result.image) || result.image.length > 20_000_000) {
-    throw new AppError('IMAGE_INVALID', '이미지 생성 서버에서 올바른 결과를 받지 못했습니다.', 502);
-  }
-  return json({ image: `data:image/png;base64,${result.image}` });
+  let image: ReturnType<typeof decodeGeneratedImage>;
+  try { image = decodeGeneratedImage(result); }
+  catch (error) { throw new AppError('IMAGE_INVALID', error instanceof Error ? error.message : '이미지 생성 결과가 올바르지 않습니다.', 502); }
+  return json({ image: `data:${image.mimeType};base64,${image.base64}`, mimeType: image.mimeType });
 });
