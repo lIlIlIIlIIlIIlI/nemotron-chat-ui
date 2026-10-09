@@ -31,7 +31,7 @@ export const POST = api(async request => {
         for await (const chunk of streamChat(prepared.request)) {
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
           if (chunk.type === 'text') {
-            content += chunk.text; if (content.length > 1000000) throw new AppError('OUTPUT_LIMIT', '응답 크기 한도에 도달했습니다.');
+            content += chunk.text; if (Buffer.byteLength(content, 'utf8') > 1000000) throw new AppError('OUTPUT_LIMIT', '응답 크기 한도에 도달했습니다.');
             send({ type: 'status', status: 'generating' }); send({ type: 'delta', text: chunk.text });
           } else if (chunk.type === 'thinking') send({ type: 'status', status: 'thinking' });
           else metadata = { ...metadata, ...chunk.usage };

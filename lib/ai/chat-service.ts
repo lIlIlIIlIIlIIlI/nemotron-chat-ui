@@ -1,5 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
+import type { BatchItem } from 'drizzle-orm/batch';
+import { attachmentData, ownedAttachments } from '../db/files';
 import { db } from '../db';
 import { conversations, messages, attachments, memories, models } from '../db/schema';
 import { ownedConversation, ownedModel, ownedProject, ownedProvider, getSettings, serialized } from '../data';
@@ -25,11 +27,16 @@ export async function prepareChat(userId: string, input: z.infer<typeof chatInpu
     (input.systemPrompt ?? existing?.systemPrompt) && `Conversation instructions:\n${input.systemPrompt ?? existing?.systemPrompt}`,
     input.mode === 'code' ? 'Help with coding. For multiple files use one fenced code block per file, with the relative filename directly above it. Explain changes and meaningful verification. Code is proposed text; you cannot execute it or apply it to a repository.' : '',
   ].filter(Boolean).join('\n\n');
-  return db().transaction(async tx => {
-    let conversation = existing;
-    if (conversation) { const [locked] = await tx.select().from(conversations).where(eq(conversations.id, conversation.id)).for('update'); conversation = locked; }
-    if (!conversation) { [conversation] = await tx.insert(conversations).values({ userId, projectId, defaultModelId: model.id, title: (input.content || '파일 분석').replace(/\s+/g, ' ').slice(0,70), systemPrompt: input.systemPrompt || '' }).returning(); }
-    const nodes = await tx.select().from(messages).where(eq(messages.conversationId, conversation.id));
+  const tx = db();
+  const writes: BatchItem<'sqlite'>[] = [];
+  const now = new Date();
+  let conversation: typeof conversations.$inferSelect = existing || {
+    id: crypto.randomUUID(), userId, projectId, defaultModelId: model.id,
+    title: (input.content || '파일 분석').replace(/\s+/g, ' ').slice(0,70), systemPrompt: input.systemPrompt || '',
+    activeLeafId: null, isPinned: false, isArchived: false, createdAt: now, updatedAt: now,
+  };
+  if (!existing) writes.push(tx.insert(conversations).values(conversation));
+  const nodes = existing ? await tx.select().from(messages).where(eq(messages.conversationId, conversation.id)) : [];
     if (nodes.length >= 1000) throw new AppError('CONVERSATION_LIMIT', '대화가 길어졌습니다. 새 대화를 시작해 주세요. 이전 대화는 보존됩니다.');
     if (nodes.some(x => x.status === 'streaming' && Date.now() - x.createdAt.getTime() < 150000)) throw new AppError('GENERATING', '이 대화에서 이미 응답을 생성하고 있습니다.', 409);
     let userMessage: typeof messages.$inferSelect | null = null;
@@ -44,13 +51,15 @@ export async function prepareChat(userId: string, input: z.infer<typeof chatInpu
         const files = await tx.select({ id: attachments.id, projectId: attachments.projectId, conversationId: attachments.conversationId }).from(attachments).where(and(inArray(attachments.id, input.attachmentIds), eq(attachments.userId, userId)));
         if (files.length !== new Set(input.attachmentIds).size || files.some(x => x.projectId && x.projectId !== projectId || x.conversationId && x.conversationId !== conversation!.id)) throw new AppError('FILE_OWNERSHIP', '현재 대화 또는 프로젝트에서 사용할 수 없는 파일입니다.', 403);
       }
-      [userMessage] = await tx.insert(messages).values({ conversationId: conversation.id, parentMessageId: parent, role: 'user', content: input.content || '첨부 파일을 분석해 주세요.', metadata: { mode: input.mode, attachmentIds: input.attachmentIds } }).returning();
+      userMessage = { id: crypto.randomUUID(), conversationId: conversation.id, parentMessageId: parent, role: 'user', content: input.content || '첨부 파일을 분석해 주세요.', metadata: { mode: input.mode, attachmentIds: input.attachmentIds }, modelId: null, providerId: null, status: 'complete', createdAt: now };
+      writes.push(tx.insert(messages).values(userMessage));
       parent = userMessage.id; nodes.push(userMessage);
-      if (input.attachmentIds.length) await tx.update(attachments).set({ conversationId: conversation.id, messageId: userMessage.id }).where(and(inArray(attachments.id, input.attachmentIds), eq(attachments.userId, userId), sql`${attachments.projectId} is null`, sql`${attachments.messageId} is null`));
+      if (input.attachmentIds.length) writes.push(tx.update(attachments).set({ conversationId: conversation.id, messageId: userMessage.id }).where(and(inArray(attachments.id, input.attachmentIds), eq(attachments.userId, userId), sql`${attachments.projectId} is null`, sql`${attachments.messageId} is null`)));
     }
     const branch = activeBranch(nodes, parent);
     const fileIds = [...new Set(branch.flatMap(x => x.metadata.attachmentIds || []))];
-    const files = fileIds.length ? await tx.select().from(attachments).where(and(inArray(attachments.id, fileIds), eq(attachments.userId, userId))) : [];
+    const files = await ownedAttachments(fileIds, userId);
+    await Promise.all(files.filter(file => file.mimeType.startsWith('image/') && !file.data).map(async file => { file.data = await attachmentData(file.id, userId); }));
     const context: AIContent[] = branch.filter(x => ['user','assistant'].includes(x.role)).map(message => {
       const linked = files.filter(x => message.metadata.attachmentIds?.includes(x.id));
       const images = linked.filter(x => x.mimeType.startsWith('image/')).map(x => ({ mimeType: x.mimeType, data: x.data }));
@@ -59,10 +68,13 @@ export async function prepareChat(userId: string, input: z.infer<typeof chatInpu
     });
     const options = { ...settings.options, ...input.options };
     const fitted = fitContext(instructions, context, model.contextWindow, Math.min(options.maxTokens || model.maxOutputTokens, model.maxOutputTokens));
-    const [assistant] = await tx.insert(messages).values({ conversationId: conversation.id, parentMessageId: parent, role: 'assistant', modelId: model.id, providerId: provider.id, status: 'streaming', metadata: { contextTrimmed: fitted.trimmed, mode: input.mode } }).returning();
-    [conversation] = await tx.update(conversations).set({ activeLeafId: assistant.id, defaultModelId: model.id, systemPrompt: input.systemPrompt ?? conversation.systemPrompt, updatedAt: new Date() }).where(eq(conversations.id, conversation.id)).returning();
-    await tx.update(models).set({ lastUsedAt: new Date() }).where(eq(models.id, model.id));
+    const assistant: typeof messages.$inferSelect = { id: crypto.randomUUID(), conversationId: conversation.id, parentMessageId: parent, role: 'assistant', content: '', modelId: model.id, providerId: provider.id, status: 'streaming', metadata: { contextTrimmed: fitted.trimmed, mode: input.mode }, createdAt: now };
+    writes.push(tx.insert(messages).values(assistant));
+    conversation = { ...conversation, activeLeafId: assistant.id, defaultModelId: model.id, systemPrompt: input.systemPrompt ?? conversation.systemPrompt, updatedAt: now };
+    writes.push(tx.update(conversations).set({ activeLeafId: assistant.id, defaultModelId: model.id, systemPrompt: conversation.systemPrompt, updatedAt: now }).where(eq(conversations.id, conversation.id)));
+    writes.push(tx.update(models).set({ lastUsedAt: now }).where(eq(models.id, model.id)));
+    // Context validation completes before writes. D1 rolls back the entire batch if a guard fails.
+    await tx.batch(writes as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]);
     const request: AIRequest = { provider, model, system: instructions, messages: fitted.messages, options, signal };
     return { request, conversation: serialized<Conversation>(conversation), userMessage: serialized<Message | null>(userMessage), assistant: serialized<Message>(assistant), trimmed: fitted.trimmed };
-  });
 }

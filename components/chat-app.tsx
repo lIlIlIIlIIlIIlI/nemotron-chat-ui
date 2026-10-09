@@ -33,13 +33,14 @@ function WorkspaceApp() {
     const apply = () => { document.documentElement.dataset.theme = p.theme === 'system' ? media.matches ? 'dark' : 'light' : p.theme; document.documentElement.lang = p.language; document.documentElement.style.setProperty('--message-font-size', `${p.fontSize}px`); document.documentElement.dataset.compact = String(p.compact); document.documentElement.dataset.codeTheme = p.codeTheme; };
     apply(); media.addEventListener('change', apply); return () => media.removeEventListener('change', apply);
   }, [base.data?.settings]);
+  const { newChat, stop } = base;
   useEffect(() => {
     const keydown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setSearch(true); }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); base.newChat(); setEditing(null); setDraft(''); setArtifact(null); }
-      if (e.key === 'Escape' && !document.querySelector('dialog[open]')) { base.stop(); setDrawer(false); }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); newChat(); setEditing(null); setDraft(''); setArtifact(null); }
+      if (e.key === 'Escape' && !document.querySelector('dialog[open]')) { stop(); setDrawer(false); }
     }; window.addEventListener('keydown',keydown); return () => window.removeEventListener('keydown',keydown);
-  }, [base.newChat, base.stop]);
+  }, [newChat, stop]);
   useEffect(() => {
     if (!sidebar || !mobile) return; const previous = document.activeElement as HTMLElement | null; const aside = document.querySelector<HTMLElement>('.sidebar');
     const elements = () => Array.from(aside?.querySelectorAll<HTMLElement>('button:not(:disabled), input, select, a[href], summary') || []).filter(x => x.offsetParent); elements()[0]?.focus();

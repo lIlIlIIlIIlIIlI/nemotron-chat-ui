@@ -8,3 +8,7 @@ next-env.d.ts
 playwright-report/
 test-results/
 .vercel/
+
+.wrangler/
+.dev.vars*
+!.dev.vars.example

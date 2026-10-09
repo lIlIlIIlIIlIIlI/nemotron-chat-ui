@@ -1,4 +1,4 @@
-import { and, eq, desc, ilike, or, sql } from 'drizzle-orm';
+import { and, eq, desc, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireUser } from '@/lib/auth';
 import { ownedProject, ownedModel } from '@/lib/data';
@@ -8,13 +8,13 @@ import { conversations, messages, projects } from '@/lib/db/schema';
 import { uuid } from '@/lib/validation';
 export const GET = api(async request => {
   const user = await requireUser(); const params = new URL(request.url).searchParams;
-  const query = (params.get('q') || '').slice(0, 150).replace(/[\\%_]/g, '\\$&');
-  const offset = Math.max(0, Math.min(Number(params.get('offset')) || 0, 100000));
+  const query = (params.get('q') || '').slice(0, 150);
+  const offset = Math.floor(Math.max(0, Math.min(Number(params.get('offset')) || 0, 100000)));
   const projectId = params.get('projectId');
   const rows = await db().select().from(conversations).where(and(eq(conversations.userId, user.id),
     params.get('archived') === 'all' ? undefined : eq(conversations.isArchived, params.get('archived') === 'true'),
     projectId ? eq(conversations.projectId, projectId) : undefined,
-    query ? or(ilike(conversations.title, `%${query}%`), sql`exists(select 1 from ${messages} where ${messages.conversationId}=${conversations.id} and ${messages.content} ilike ${`%${query}%`})`, sql`exists(select 1 from ${projects} where ${projects.id}=${conversations.projectId} and ${projects.name} ilike ${`%${query}%`})`) : undefined,
+    query ? or(sql`instr(lower(${conversations.title}), lower(${query})) > 0`, sql`exists(select 1 from ${messages} where ${messages.conversationId}=${conversations.id} and instr(lower(${messages.content}), lower(${query})) > 0)`, sql`exists(select 1 from ${projects} where ${projects.id}=${conversations.projectId} and instr(lower(${projects.name}), lower(${query})) > 0)`) : undefined,
   )).orderBy(desc(conversations.isPinned), desc(conversations.updatedAt), desc(conversations.id)).limit(41).offset(offset);
   return json({ items: rows.slice(0, 40), hasMore: rows.length > 40, nextOffset: offset + 40 });
 });

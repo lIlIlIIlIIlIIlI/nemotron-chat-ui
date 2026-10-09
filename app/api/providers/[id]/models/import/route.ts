@@ -8,5 +8,10 @@ import { modelInput } from '@/lib/validation';
 export const POST = api(async request => {
   const user = await requireUser(); const providerId = resourceId(request, 2); await ownedProvider(user.id, providerId);
   const input = await body(request, z.object({ models: z.array(modelInput.omit({ providerId: true })).min(1).max(100) }));
-  const rows = await db().insert(models).values(input.models.map(model => ({ ...model, providerId }))).onConflictDoNothing().returning(); return json(rows, 201);
+  const database = db();
+  const queries = [];
+  // Each model binds ~18 values; stay below D1's 100-variable statement limit.
+  for (let start = 0; start < input.models.length; start += 4) queries.push(database.insert(models).values(input.models.slice(start, start + 4).map(model => ({ ...model, providerId }))).onConflictDoNothing().returning());
+  const results = await database.batch([queries[0], ...queries.slice(1)]);
+  return json(results.flat(), 201);
 });

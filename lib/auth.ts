@@ -16,11 +16,24 @@ export async function getUser() {
 }
 export async function requireUser() { const user = await getUser(); if (!user) throw new AppError('UNAUTHENTICATED', '로그인이 필요합니다.', 401); return user; }
 export async function hasValidSession() { return Boolean(await getUser()); }
-export async function createSession(userId: string) {
-  await destroySession();
+export function newSession(userId: string) {
   const token = randomBytes(32).toString('base64url');
-  await db().insert(sessions).values({ id: digest(token), userId, expiresAt: new Date(Date.now() + duration * 1000) });
+  return { token, record: { id: digest(token), userId, expiresAt: new Date(Date.now() + duration * 1000) } };
+}
+export async function setSessionCookie(token: string) {
   (await cookies()).set(SESSION_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: duration });
+}
+export async function currentSessionId() {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  return token ? digest(token) : '';
+}
+export async function createSession(userId: string) {
+  const session = newSession(userId); const database = db();
+  await database.batch([
+    database.delete(sessions).where(eq(sessions.id, await currentSessionId())),
+    database.insert(sessions).values(session.record),
+  ]);
+  await setSessionCookie(session.token);
 }
 export async function destroySession() {
   const jar = await cookies(); const token = jar.get(SESSION_COOKIE)?.value;

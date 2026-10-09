@@ -33,13 +33,21 @@ export function useWorkspace() {
     abort.current?.abort(); ++nav.current; active.current = null; setConversation(null); setMessages([]); setAttachments([]); setProjectId(project); setSystemPrompt(''); setLoadingChat(false); window.history.replaceState({}, '', '/');
   }, []);
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([loadData(), refreshList()]).then(([boot]) => {
-      if (cancelled) return; setOptions(boot.settings.options); setProjectId(boot.settings.defaultProjectId); setModelId(boot.settings.defaultModelId || boot.models.find(x => x.isEnabled)?.id || '');
+    const controller = new AbortController();
+    Promise.all([
+      apiFetch<Bootstrap>('/api/bootstrap', { signal: controller.signal }),
+      apiFetch<{ items: Conversation[]; hasMore: boolean }>('/api/conversations?offset=0', { signal: controller.signal }),
+    ]).then(([boot, list]) => {
+      if (controller.signal.aborted) return;
+      setData(boot); setConversations(list.items); setHasMore(list.hasMore);
+      setOptions(boot.settings.options); setProjectId(boot.settings.defaultProjectId);
+      const preferred = boot.models.find(x => x.id === boot.settings.defaultModelId && x.isEnabled);
+      setModelId(preferred?.id || boot.models.find(x => x.isEnabled)?.id || '');
       const id = new URLSearchParams(window.location.search).get('chat'); if (id) void openConversation(id);
-    }).catch(err => setError(err.message));
-    return () => { cancelled = true; abort.current?.abort(); };
-  }, [loadData, refreshList, openConversation]);
+    }).catch(err => { if (!controller.signal.aborted) setError(err.message); });
+    return () => { controller.abort(); abort.current?.abort(); };
+  }, [openConversation]);
+
   const patchConversation = useCallback(async (id: string, patch: Partial<Conversation>) => {
     const updated = await apiFetch<Conversation>(`/api/conversations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
     if (active.current === id) setConversation(updated); await refreshList(); return updated;

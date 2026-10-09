@@ -1,6 +1,6 @@
 import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['pg', 'unpdf'],
+  serverExternalPackages: ['unpdf'],
   async headers() {
     const development = process.env.NODE_ENV !== 'production';
     return [{ source: '/(.*)', headers: [

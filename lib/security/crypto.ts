@@ -1,7 +1,9 @@
+import { requiredSecret } from '../config';
+import { AppError } from '../errors';
 import { createCipheriv, createDecipheriv, randomBytes, createHmac } from 'node:crypto';
 function masterKey() {
   const value = process.env.APP_ENCRYPTION_KEY;
-  if (!value || !/^[A-Za-z0-9+/]{43}=$/.test(value)) throw new Error('APP_ENCRYPTION_KEY must be a base64-encoded 32-byte key');
+  if (!value || !/^[A-Za-z0-9+/]{43}=$/.test(value)) throw new AppError('CONFIGURATION', 'APP_ENCRYPTION_KEY 서버 설정을 확인해 주세요.', 503);
   return Buffer.from(value, 'base64');
 }
 export function encryptSecret(value: string, owner: string) {
@@ -19,7 +21,6 @@ export function decryptSecret(value: string, owner: string) {
   return Buffer.concat([decipher.update(Buffer.from(data, 'base64')), decipher.final()]).toString('utf8');
 }
 export function digest(value: string) {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret || secret.length < 32) throw new Error('AUTH_SECRET must contain at least 32 characters');
+  const secret = requiredSecret('AUTH_SECRET');
   return createHmac('sha256', secret).update(value).digest('hex');
 }
