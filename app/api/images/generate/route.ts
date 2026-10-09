@@ -1,5 +1,5 @@
 import { requireUser } from '@/lib/auth';
-import { api, AppError, json, body } from '@/lib/http';
+import { api, AppError, json, readLimited } from '@/lib/http';
 import { rateLimit } from '@/lib/security/rate-limit';
 import { z } from 'zod';
 
@@ -16,7 +16,10 @@ const inputSchema = z.object({
 export const POST = api(async request => {
   const user = await requireUser();
   await rateLimit('image-generation', user.id, 5, 60);
-  const input = await body(request, inputSchema);
+  let parsed: unknown;
+  try { parsed = JSON.parse(new TextDecoder().decode(await readLimited(request, 3 * 1024 * 1024))); }
+  catch (error) { if (error instanceof AppError) throw error; throw new AppError('INVALID_JSON', '올바른 JSON 요청이 필요합니다.', 400); }
+  const input = inputSchema.parse(parsed);
   const endpoint = process.env.FLUX_WORKER_URL;
   const key = process.env.FLUX_WORKER_API_KEY;
   if (!endpoint || !key) throw new AppError('CONFIGURATION', 'FLUX Worker 연결 설정이 필요합니다.', 503);
