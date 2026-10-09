@@ -12,9 +12,10 @@ export const POST = api(async request => {
   const user = await requireUser(); await rateLimit('provider-write', user.id, 20);
   const { apiKey, ...input } = await body(request, providerInput); validateProviderUrl(input.baseUrl);
   const id = crypto.randomUUID();
-  await db().transaction(async tx => {
-    await tx.insert(providers).values({ ...input, id, userId: user.id });
-    await tx.insert(credentials).values({ providerId: id, encryptedApiKey: encryptSecret(apiKey, `${user.id}:${id}`), keyLastFour: apiKey.slice(-4) });
-  });
+  const database = db();
+  await database.batch([
+    database.insert(providers).values({ ...input, id, userId: user.id }),
+    database.insert(credentials).values({ providerId: id, encryptedApiKey: encryptSecret(apiKey, `${user.id}:${id}`), keyLastFour: apiKey.slice(-4) }),
+  ]);
   return json((await listProviders(user.id)).find(x => x.id === id), 201);
 });

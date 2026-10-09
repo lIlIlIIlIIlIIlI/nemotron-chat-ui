@@ -33,13 +33,21 @@ export function useWorkspace() {
     abort.current?.abort(); ++nav.current; active.current = null; setConversation(null); setMessages([]); setAttachments([]); setProjectId(project); setSystemPrompt(''); setLoadingChat(false); window.history.replaceState({}, '', '/');
   }, []);
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([loadData(), refreshList()]).then(([boot]) => {
-      if (cancelled) return; setOptions(boot.settings.options); setProjectId(boot.settings.defaultProjectId); setModelId(boot.settings.defaultModelId || boot.models.find(x => x.isEnabled)?.id || '');
+    const controller = new AbortController();
+    Promise.all([
+      apiFetch<Bootstrap>('/api/bootstrap', { signal: controller.signal }),
+      apiFetch<{ items: Conversation[]; hasMore: boolean }>('/api/conversations?offset=0', { signal: controller.signal }),
+    ]).then(([boot, list]) => {
+      if (controller.signal.aborted) return;
+      setData(boot); setConversations(list.items); setHasMore(list.hasMore);
+      setOptions(boot.settings.options); setProjectId(boot.settings.defaultProjectId);
+      const preferred = boot.models.find(x => x.id === boot.settings.defaultModelId && x.isEnabled);
+      setModelId(preferred?.id || boot.models.find(x => x.isEnabled)?.id || '');
       const id = new URLSearchParams(window.location.search).get('chat'); if (id) void openConversation(id);
-    }).catch(err => setError(err.message));
-    return () => { cancelled = true; abort.current?.abort(); };
-  }, [loadData, refreshList, openConversation]);
+    }).catch(err => { if (!controller.signal.aborted) setError(err.message); });
+    return () => { controller.abort(); abort.current?.abort(); };
+  }, [openConversation]);
+
   const patchConversation = useCallback(async (id: string, patch: Partial<Conversation>) => {
     const updated = await apiFetch<Conversation>(`/api/conversations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
     if (active.current === id) setConversation(updated); await refreshList(); return updated;
@@ -49,7 +57,7 @@ export function useWorkspace() {
     const selected = input.selectedModelId || modelId;
     if (!selected) { toast('설정에서 Provider와 모델을 먼저 추가해 주세요.', true); return false; }
     const controller = new AbortController(); const sequence = nav.current; abort.current = controller; setBusy(true); setStatus('connecting');
-    let assistantId = ''; let fullText = ''; let frame = 0; let accepted = false;
+    let assistantId = ''; let fullText = ''; let frame = 0; let accepted = false; let finalized = false;
     const flush = () => { if (assistantId && sequence === nav.current) setMessages(old => old.map(x => x.id === assistantId ? { ...x, content: fullText } : x)); frame = 0; };
     try {
       const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: active.current || undefined, projectId, modelId: selected, content: input.content, attachmentIds: input.files?.map(x => x.id) || [], regenerateId: input.regenerateId, parentMessageId: input.parentMessageId, mode, options, systemPrompt }), signal: controller.signal });
@@ -68,13 +76,19 @@ export function useWorkspace() {
         if (event.type === 'status') setStatus(event.status);
         if (event.type === 'warning') toast(event.message);
         if (event.type === 'error') toast(event.message, true);
-        if (event.type === 'done') { cancelAnimationFrame(frame); frame = 0; setMessages(old => old.map(x => x.id === event.message.id ? event.message : x)); }
+        if (event.type === 'done') { finalized = true; cancelAnimationFrame(frame); frame = 0; setMessages(old => old.map(x => x.id === event.message.id ? event.message : x)); }
       }
     } catch (err) {
       cancelAnimationFrame(frame); flush();
       if (!controller.signal.aborted) toast((err as Error).message, true);
       if (sequence === nav.current) setMessages(old => old.map(x => x.id === assistantId ? { ...x, status: controller.signal.aborted ? 'stopped' : 'error' } : x));
     } finally {
+      cancelAnimationFrame(frame);
+      if (!finalized) {
+        flush();
+        // Aborting a reader may end iteration normally instead of throwing.
+        if (controller.signal.aborted && sequence === nav.current) setMessages(old => old.map(x => x.id === assistantId ? { ...x, status: 'stopped' } : x));
+      }
       if (abort.current === controller) { abort.current = null; setBusy(false); setStatus(''); } void refreshList().catch(() => {});
     }
     return accepted;

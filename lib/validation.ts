@@ -2,7 +2,7 @@ import { z } from 'zod';
 export const uuid = z.string().uuid();
 const smallText = z.string().trim().min(1).max(120);
 export const password = z.string().min(12, '비밀번호는 12자 이상이어야 합니다.').max(64).refine(x => Buffer.byteLength(x, 'utf8') <= 72, '비밀번호는 UTF-8 기준 72바이트 이하여야 합니다.');
-export const email = z.email().max(254).transform(x => x.toLowerCase().trim());
+export const email = z.string().trim().toLowerCase().pipe(z.email().max(254));
 export const registerInput = z.object({ email, password, name: z.string().trim().min(1).max(60) });
 export const loginInput = z.object({ email, password: z.string().min(1).max(128) });
 export const optionsInput = z.object({ temperature: z.number().min(0).max(2).optional(), topP: z.number().min(0).max(1).optional(), maxTokens: z.number().int().min(1).max(131072).optional(), frequencyPenalty: z.number().min(-2).max(2).optional(), presencePenalty: z.number().min(-2).max(2).optional(), reasoningEffort: z.enum(['off','low','medium','high']).optional() });

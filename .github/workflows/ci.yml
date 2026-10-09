@@ -12,52 +12,25 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: nemotron_test
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nemotron_test
-      APP_URL: http://127.0.0.1:3000
-      AUTH_SECRET: ci-only-disposable-auth-secret-not-for-production
-      APP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
+          cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: npm run db:migrate
       - run: npm run typecheck
-        id: types
-        continue-on-error: true
       - run: npm run lint
-        id: lint
-        continue-on-error: true
       - run: npm test
-        id: unit
-        continue-on-error: true
+      - run: npm run test:integration
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-      - name: Require all checks
-        if: always()
-        run: |
-          test "${{ steps.types.outcome }}" = success
-          test "${{ steps.lint.outcome }}" = success
-          test "${{ steps.unit.outcome }}" = success
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: failure()
         with:
           name: verification-evidence
           path: |
-            package-lock.json
             playwright-report/
             test-results/
           retention-days: 7
-

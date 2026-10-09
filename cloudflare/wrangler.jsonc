@@ -1,0 +1,14 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "nemotron-database",
+  "main": "worker.mjs",
+  "account_id": "63a3fad90d64d00e037bca8c63d60948",
+  "compatibility_date": "2026-08-01",
+  "workers_dev": true,
+  "d1_databases": [{
+    "binding": "DB", "database_name": "nemotron-workspace",
+    "database_id": "d1d6b722-9946-42a4-80c4-6cb491549e23", "migrations_dir": "migrations"
+  }],
+  "triggers": { "crons": ["17 * * * *"] },
+  "observability": { "enabled": true }
+}

@@ -1,10 +1,11 @@
-import { and, eq, sql, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { extractText } from 'unpdf';
 import { requireUser } from '@/lib/auth';
 import { ownedProject } from '@/lib/data';
 import { api, json, readLimited, AppError } from '@/lib/http';
 import { db } from '@/lib/db';
-import { attachments, users } from '@/lib/db/schema';
+import { attachments, attachmentChunks } from '@/lib/db/schema';
+import { fileChunks } from '@/lib/db/files';
 import { MAX_FILE_SIZE, validateFile } from '@/lib/files';
 import { rateLimit } from '@/lib/security/rate-limit';
 const projection = { id: attachments.id, name: attachments.name, mimeType: attachments.mimeType, size: attachments.size, projectId: attachments.projectId, messageId: attachments.messageId, conversationId: attachments.conversationId };
@@ -26,11 +27,12 @@ export const POST = api(async request => {
     try { const result = await extractText(new Uint8Array(bytes), { mergePages: true }); checked.text = result.text.slice(0,200000); if (!checked.text.trim()) throw new Error(); }
     catch { throw new AppError('PDF_TEXT', 'PDF에서 텍스트를 읽을 수 없습니다. 스캔 문서는 이미지로 첨부해 주세요.'); }
   }
-  const row = await db().transaction(async tx => {
-    await tx.select({ id: users.id }).from(users).where(eq(users.id, user.id)).for('update');
-    const [size] = await tx.select({ total: sql<number>`coalesce(sum(${attachments.size}),0)::int` }).from(attachments).where(eq(attachments.userId, user.id));
-    if (size.total + bytes.length > 50 * 1024 * 1024) throw new AppError('STORAGE_LIMIT', '계정 파일 저장 한도(50MB)를 초과했습니다. 기존 파일을 삭제해 주세요.');
-    const [item] = await tx.insert(attachments).values({ userId: user.id, name, mimeType: checked.mimeType, size: bytes.length, data: bytes.toString('base64'), extractedText: checked.text?.slice(0,200000), projectId: typeof projectId === 'string' && projectId ? projectId : null }).returning(projection); return item;
-  }); return json(row, 201);
+  const id = crypto.randomUUID(); const database = db();
+  // Chunk the payload so a 2MB upload cannot exceed D1's per-row size limit.
+  const [rows] = await database.batch([
+    database.insert(attachments).values({ id, userId: user.id, name, mimeType: checked.mimeType, size: bytes.length, extractedText: checked.text?.slice(0,200000), projectId: typeof projectId === 'string' && projectId ? projectId : null }).returning(projection),
+    ...fileChunks(id, bytes).map(chunk => database.insert(attachmentChunks).values(chunk)),
+  ]);
+  return json(rows[0], 201);
 });
-export const DELETE = api(async () => { const user = await requireUser(); const ids = await db().select({ id: attachments.id }).from(attachments).where(eq(attachments.userId, user.id)); if (ids.length) await db().delete(attachments).where(inArray(attachments.id, ids.map(x => x.id))); return json({ ok: true }); });
+export const DELETE = api(async () => { const user = await requireUser(); await db().delete(attachments).where(eq(attachments.userId, user.id)); return json({ ok: true }); });

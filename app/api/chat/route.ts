@@ -31,13 +31,14 @@ export const POST = api(async request => {
         for await (const chunk of streamChat(prepared.request)) {
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
           if (chunk.type === 'text') {
-            content += chunk.text; if (content.length > 1000000) throw new AppError('OUTPUT_LIMIT', '응답 크기 한도에 도달했습니다.');
+            content += chunk.text; if (Buffer.byteLength(content, 'utf8') > 1000000) throw new AppError('OUTPUT_LIMIT', '응답 크기 한도에 도달했습니다.');
             send({ type: 'status', status: 'generating' }); send({ type: 'delta', text: chunk.text });
           } else if (chunk.type === 'thinking') send({ type: 'status', status: 'thinking' });
           else metadata = { ...metadata, ...chunk.usage };
           if (Date.now() - checkpoint > 1500) { await db().update(messages).set({ content, metadata }).where(eq(messages.id, prepared.assistant.id)); checkpoint = Date.now(); }
         }
-        if (!content && !signal.aborted) throw new AppError('EMPTY_RESPONSE', 'Provider가 텍스트 응답을 반환하지 않았습니다.', 502);
+        signal.throwIfAborted();
+        if (!content) throw new AppError('EMPTY_RESPONSE', 'Provider가 텍스트 응답을 반환하지 않았습니다.', 502);
       } catch (error) {
         const safe = safeAIError(error); status = signal.aborted ? 'stopped' : 'error';
         metadata = { ...metadata, error: signal.reason?.name === 'TimeoutError' ? '응답 시간이 초과되었습니다. 다시 생성할 수 있습니다.' : safe.message };

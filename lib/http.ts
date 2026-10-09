@@ -1,11 +1,10 @@
 import { ZodError, type ZodType } from 'zod';
-export class AppError extends Error {
-  constructor(public code: string, message: string, public status = 400) { super(message); }
-}
+import { AppError, knownError } from './errors';
+import { allowedOrigins } from './config';
+export { AppError } from './errors';
 export function assertOrigin(request: Request) {
   const origin = request.headers.get('origin');
-  const expected = new URL(process.env.APP_URL || request.url).origin;
-  if (!origin || origin !== expected || request.headers.get('sec-fetch-site') === 'cross-site') throw new AppError('CSRF', '요청 출처를 확인할 수 없습니다. 페이지를 새로고침해 주세요.', 403);
+  if (!origin || !allowedOrigins(request).has(origin) || request.headers.get('sec-fetch-site') === 'cross-site') throw new AppError('CSRF', '요청 출처를 확인할 수 없습니다. 페이지를 새로고침해 주세요.', 403);
 }
 export async function readLimited(request: Request, limit: number) {
   if (Number(request.headers.get('content-length')) > limit) throw new AppError('TOO_LARGE', '요청 크기가 너무 큽니다.', 413);
@@ -26,13 +25,25 @@ export async function body<T>(request: Request, schema: ZodType<T>): Promise<T> 
 export function json(value: unknown, status = 200) { return Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } }); }
 export function api(handler: (request: Request) => Promise<Response>) {
   return async (request: Request) => {
-    try { if (!['GET', 'HEAD'].includes(request.method)) assertOrigin(request); return await handler(request); }
+    const requestId = crypto.randomUUID();
+    const start = Date.now();
+    try {
+      if (!['GET', 'HEAD'].includes(request.method)) assertOrigin(request);
+      const response = await handler(request);
+      response.headers.set('X-Request-Id', requestId);
+      return response;
+    }
     catch (error) {
-      if (error instanceof AppError) return json({ error: error.message, code: error.code }, error.status);
-      if (error instanceof ZodError) return json({ error: '입력값을 확인해 주세요.', code: 'VALIDATION', fields: error.issues.map(x => ({ path: x.path.join('.'), message: x.message })) }, 400);
-      // Never log upstream payloads, database query parameters, headers or secrets.
-      console.error('request_failed', { category: error instanceof Error ? error.name : 'Error' });
-      return json({ error: '서버 요청을 완료하지 못했습니다. 설정과 연결을 확인해 주세요.', code: 'SERVER_ERROR' }, 500);
+      const safe = knownError(error);
+      const status = safe?.status || (error instanceof ZodError ? 400 : 500);
+      const code = safe?.code || (error instanceof ZodError ? 'VALIDATION' : 'SERVER_ERROR');
+      if (status >= 500) console.error('request_failed', { requestId, code, method: request.method, durationMs: Date.now() - start });
+      const response = json({ error: safe?.message || (error instanceof ZodError ? error.issues[0]?.message || '입력값을 확인해 주세요.' : '요청을 완료하지 못했습니다. 요청 ID로 관리자에게 문의해 주세요.'), code, requestId,
+        ...(error instanceof ZodError ? { fields: error.issues.map(x => ({ path: x.path.join('.'), message: x.message })) } : {}),
+      }, status);
+      response.headers.set('X-Request-Id', requestId);
+      if (safe?.retryAfter) response.headers.set('Retry-After', String(safe.retryAfter));
+      return response;
     }
   };
 }
