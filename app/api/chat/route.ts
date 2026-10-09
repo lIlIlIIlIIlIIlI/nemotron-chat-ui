@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import type { BatchItem } from 'drizzle-orm/batch';
 import { api, body, AppError } from '@/lib/http';
 import { requireUser } from '@/lib/auth';
 import { rateLimit } from '@/lib/security/rate-limit';
@@ -51,7 +52,7 @@ export const POST = api(async request => {
           await db().batch([
             db().insert(attachments).values({ id: fileId, userId: user.id, name: `flux-${fileId}.png`, mimeType: 'image/png', size: bytes.length, conversationId: prepared.conversation.id, messageId: prepared.assistant.id }),
             ...fileChunks(fileId, bytes).map(chunk => db().insert(attachmentChunks).values(chunk)),
-          ]);
+          ] as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]);
           metadata = { ...metadata, generatedImageId: fileId };
           content = '생성된 이미지';
         } else for await (const chunk of streamChat(prepared.request)) {
