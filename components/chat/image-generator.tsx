@@ -2,8 +2,8 @@
 import { useState } from 'react';
 import { ImagePlus, Download, Loader2, X } from 'lucide-react';
 
-export function ImageGenerator({ onClose }: { onClose(): void }) {
-  const [prompt, setPrompt] = useState('');
+export function ImageGenerator({ onClose, initialPrompt = '' }: { onClose(): void; initialPrompt?: string }) {
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [size, setSize] = useState('1024');
   const [reference, setReference] = useState<string | null>(null);
   const [output, setOutput] = useState<string | null>(null);
