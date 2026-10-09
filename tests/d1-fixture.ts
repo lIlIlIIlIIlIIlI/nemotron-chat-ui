@@ -1,12 +1,12 @@
-import { Miniflare } from 'miniflare';
+import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { readdir, readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 
 export async function startDatabase(port = 0) {
   const secret = process.env.CLOUDFLARE_D1_SECRET || randomBytes(32).toString('hex');
-  const worker = new Miniflare({ modules: true, scriptPath: 'cloudflare/worker.mjs', compatibilityDate: '2026-08-01',
+  const worker = new Miniflare(convertV4MiniflareOptions({ modules: true, scriptPath: 'cloudflare/worker.mjs', compatibilityDate: '2026-08-01',
     host: '127.0.0.1', port, d1Databases: { DB: 'test-database' }, bindings: { D1_PROXY_SECRET: secret },
-  });
+  }));
   try {
   const url = await worker.ready;
   process.env.CLOUDFLARE_D1_URL = url.origin;
