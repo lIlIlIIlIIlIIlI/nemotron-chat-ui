@@ -51,10 +51,20 @@ export const POST = api(async request => {
           const { bytes, mimeType, extension } = generated;
           signal.throwIfAborted();
           const fileId = crypto.randomUUID();
-          await db().batch([
-            db().insert(attachments).values({ id: fileId, userId: user.id, name: `flux-${fileId}.${extension}`, mimeType, size: bytes.length, conversationId: prepared.conversation.id, messageId: prepared.assistant.id }),
-            ...fileChunks(fileId, bytes).map(chunk => db().insert(attachmentChunks).values(chunk)),
-          ] as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]);
+          const database = db();
+          await database.insert(attachments).values({ id: fileId, userId: user.id, name: `flux-${fileId}.${extension}`, mimeType, size: bytes.length, conversationId: prepared.conversation.id, messageId: prepared.assistant.id });
+          try {
+            const chunks = fileChunks(fileId, bytes);
+            // The D1 proxy limits individual request bodies to 4 MiB.
+            for (let offset = 0; offset < chunks.length; offset += 25) {
+              signal.throwIfAborted();
+              await database.batch(chunks.slice(offset, offset + 25).map(chunk => database.insert(attachmentChunks).values(chunk)) as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]);
+            }
+            signal.throwIfAborted();
+          } catch (error) {
+            await database.delete(attachments).where(eq(attachments.id, fileId));
+            throw error;
+          }
           metadata = { ...metadata, generatedImageId: fileId };
           content = '생성된 이미지';
         } else for await (const chunk of streamChat(prepared.request)) {
