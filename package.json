@@ -20,7 +20,7 @@
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "diff": "^8.0.2",
-    "drizzle-orm": "^0.44.7",
+    "drizzle-orm": "^0.45.2",
     "highlight.js": "^11.11.1",
     "ipaddr.js": "^2.2.0",
     "katex": "^0.16.25",
