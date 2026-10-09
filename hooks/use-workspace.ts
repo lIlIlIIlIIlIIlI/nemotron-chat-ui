@@ -57,7 +57,7 @@ export function useWorkspace() {
     const selected = input.selectedModelId || modelId;
     if (!selected) { toast('설정에서 Provider와 모델을 먼저 추가해 주세요.', true); return false; }
     const controller = new AbortController(); const sequence = nav.current; abort.current = controller; setBusy(true); setStatus('connecting');
-    let assistantId = ''; let fullText = ''; let frame = 0; let accepted = false;
+    let assistantId = ''; let fullText = ''; let frame = 0; let accepted = false; let finalized = false;
     const flush = () => { if (assistantId && sequence === nav.current) setMessages(old => old.map(x => x.id === assistantId ? { ...x, content: fullText } : x)); frame = 0; };
     try {
       const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversationId: active.current || undefined, projectId, modelId: selected, content: input.content, attachmentIds: input.files?.map(x => x.id) || [], regenerateId: input.regenerateId, parentMessageId: input.parentMessageId, mode, options, systemPrompt }), signal: controller.signal });
@@ -76,13 +76,19 @@ export function useWorkspace() {
         if (event.type === 'status') setStatus(event.status);
         if (event.type === 'warning') toast(event.message);
         if (event.type === 'error') toast(event.message, true);
-        if (event.type === 'done') { cancelAnimationFrame(frame); frame = 0; setMessages(old => old.map(x => x.id === event.message.id ? event.message : x)); }
+        if (event.type === 'done') { finalized = true; cancelAnimationFrame(frame); frame = 0; setMessages(old => old.map(x => x.id === event.message.id ? event.message : x)); }
       }
     } catch (err) {
       cancelAnimationFrame(frame); flush();
       if (!controller.signal.aborted) toast((err as Error).message, true);
       if (sequence === nav.current) setMessages(old => old.map(x => x.id === assistantId ? { ...x, status: controller.signal.aborted ? 'stopped' : 'error' } : x));
     } finally {
+      cancelAnimationFrame(frame);
+      if (!finalized) {
+        flush();
+        // Aborting a reader may end iteration normally instead of throwing.
+        if (controller.signal.aborted && sequence === nav.current) setMessages(old => old.map(x => x.id === assistantId ? { ...x, status: 'stopped' } : x));
+      }
       if (abort.current === controller) { abort.current = null; setBusy(false); setStatus(''); } void refreshList().catch(() => {});
     }
     return accepted;
