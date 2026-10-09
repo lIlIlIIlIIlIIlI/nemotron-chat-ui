@@ -16,7 +16,7 @@ test('detect JPEG instead of assuming PNG', () => {
   assert.equal(image.extension, 'jpg');
 });
 test('detect WebP and handle data URL', () => {
-  const sample = Buffer.from('RIFF........WEBPVP8 ', 'ascii');
+  const sample = Buffer.from('RIFF....WEBPVP8 ', 'ascii');
   const image = decodeGeneratedImage({ image: 'data:image/webp;base64,' + sample.toString('base64') });
   assert.equal(image.mimeType, 'image/webp');
   assert.equal(image.extension, 'webp');
