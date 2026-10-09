@@ -23,7 +23,7 @@
     "drizzle-orm": "^0.45.2",
     "highlight.js": "^11.11.1",
     "ipaddr.js": "^2.2.0",
-    "katex": "^0.16.25",
+    "katex": "^0.18.2",
     "lucide-react": "^0.468.0",
     "next": "16.3.8",
     "react": "19.2.0",
@@ -45,11 +45,11 @@
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "16.3.8",
-    "miniflare": "4.20260730.0",
+    "miniflare": "5.20261006.1-alpha",
     "tailwindcss": "^4.1.16",
     "tsx": "^4.20.6",
     "typescript": "^5.9.0",
-    "wrangler": "^4.148.0"
+    "wrangler": "^4.149.0"
   },
   "engines": {
     "node": "24.x"
