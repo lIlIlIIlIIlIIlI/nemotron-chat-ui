@@ -64,9 +64,8 @@ export const POST = api(async request => {
             const chunks = fileChunks(fileId, generated.bytes);
             for (let offset = 0; offset < chunks.length; offset += 8) {
               signal.throwIfAborted();
-              await database.batch(chunks.slice(offset, offset + 8).map(chunk =>
-                database.insert(attachmentChunks).values(chunk)
-              ) as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]);
+              const writes = chunks.slice(offset, offset + 8).map(chunk => database.insert(attachmentChunks).values(chunk));
+              await database.batch(writes as unknown as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]);
             }
           } catch (error) {
             await database.delete(attachments).where(eq(attachments.id, fileId)).catch(() => {});

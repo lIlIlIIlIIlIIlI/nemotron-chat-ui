@@ -90,7 +90,7 @@ export async function generateImage(config: ImageApiConfig, prompt: string, sign
 export async function checkImageProvider(config: ImageApiConfig) {
   validateImageApi(config.type, config.baseUrl, config.modelId);
   const path = config.type === 'gemini' ? `/models/${config.modelId}` : '/models';
-  const headers = config.type === 'gemini' ? { 'x-goog-api-key': config.apiKey } : { authorization: `Bearer ${config.apiKey}` };
+  const headers: Record<string, string> = config.type === 'gemini' ? { 'x-goog-api-key': config.apiKey } : { authorization: `Bearer ${config.apiKey}` };
   const response = await providerFetch(providerUrl(config.baseUrl, path), { headers, timeoutMs: 12000 });
   if (!response.ok) throw new AppError('IMAGE_TEST_FAILED', response.status === 401 || response.status === 403 ? 'API 키를 확인해 주세요.' : '모델 조회에 실패했습니다. 일부 호환 API는 모델 조회를 지원하지 않습니다.', 502);
   await response.body?.cancel();
